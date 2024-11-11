@@ -37,16 +37,12 @@
     <div class="main-container">
         <div class="sidebar" id="sidebar">
             <div class="upload-area">
-                <!-- Separate inputs for camera and file selection -->
-                <input type="file" id="cameraInput" accept="image/*,.heic" capture="environment" style="display: none">
+                <!-- Single input without capture attribute -->
                 <input type="file" id="fileInput" multiple accept="image/*,.heic" style="display: none">
                 
                 <div class="upload-buttons">
                     <button class="upload-button" onclick="document.getElementById('fileInput').click()">
-                        Fotos wählen
-                    </button>
-                    <button class="upload-button camera-button" onclick="document.getElementById('cameraInput').click()">
-                        Kamera
+                        Fotos hinzufügen
                     </button>
                 </div>
                 
