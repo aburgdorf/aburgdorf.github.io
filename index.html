@@ -198,6 +198,11 @@
             color: #ff4444;
         }
 
+        .no-date {
+            color: #999;
+            font-style: italic;
+        }
+
         @media (max-width: 768px) {
             .toggle-sidebar {
                 display: block;
@@ -275,12 +280,11 @@
             <div id="map"></div>
         </div>
     </div>
-
     <script>
         const map = L.map('map', {
             zoomControl: false,
             tap: true
-        }).setView([51.1657, 10.4515], 6);
+        }).setView([51.30616, 7.24492], 15);
         
         L.control.zoom({
             position: 'bottomright'
@@ -293,9 +297,16 @@
         const sidebar = document.getElementById('sidebar');
         const toggleButton = document.getElementById('toggleSidebar');
         const overlay = document.getElementById('sidebarOverlay');
+        const markers = new Map();
+        const imageUrls = new Map();
+        const dropZone = document.getElementById('dropZone');
+        const photoList = document.getElementById('photoList');
+        const fileInput = document.getElementById('fileInput');
 
+        // UI Event Handler
         toggleButton.addEventListener('click', toggleSidebar);
         overlay.addEventListener('click', toggleSidebar);
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
         function toggleSidebar() {
             sidebar.classList.toggle('active');
@@ -303,19 +314,17 @@
             toggleButton.textContent = sidebar.classList.contains('active') ? 'Karte anzeigen' : 'Fotos anzeigen';
         }
 
-        const markers = new Map();
-        const imageUrls = new Map();
-
-        const dropZone = document.getElementById('dropZone');
-        const photoList = document.getElementById('photoList');
-        const fileInput = document.getElementById('fileInput');
-
-        fileInput.addEventListener('change', (e) => {
-            handleFiles(e.target.files);
-        });
-
+        // Drag & Drop Handler
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
         });
 
         function preventDefaults(e) {
@@ -323,30 +332,11 @@
             e.stopPropagation();
         }
 
-        ['dragenter', 'dragover'].forEach(eventName => {
-            dropZone.addEventListener(eventName, highlight, false);
+        dropZone.addEventListener('drop', (e) => {
+            handleFiles(e.dataTransfer.files);
         });
 
-        ['dragleave', 'drop'].forEach(eventName => {
-            dropZone.addEventListener(eventName, unhighlight, false);
-        });
-
-        function highlight(e) {
-            dropZone.classList.add('dragover');
-        }
-
-        function unhighlight(e) {
-            dropZone.classList.remove('dragover');
-        }
-
-        dropZone.addEventListener('drop', handleDrop, false);
-
-        function handleDrop(e) {
-            const dt = e.dataTransfer;
-            const files = dt.files;
-            handleFiles(files);
-        }
-
+        // Hauptfunktionen
         async function handleFiles(files) {
             for (const file of files) {
                 if (file.type.match('image.*') || file.name.toLowerCase().endsWith('.heic')) {
@@ -368,15 +358,13 @@
                 let gpsData = null;
                 let dateTime = null;
 
+                // EXIF-Daten auslesen
                 try {
                     const exifData = await exifr.parse(file, { 
                         gps: true,
                         DateTimeOriginal: true,
-                        DateTime: true,
-                        tiff: false,
-                        ifd1: false,
-                        interop: false,
-                        thumbs: false
+                        CreateDate: true,
+                        DateTime: true
                     });
                     
                     if (exifData && exifData.latitude && exifData.longitude) {
@@ -386,9 +374,15 @@
                         };
                     }
 
-                    dateTime = exifData.DateTimeOriginal || exifData.DateTime || file.lastModifiedDate || new Date();
+                    // Priorisiere Original-Aufnahmedatum
+                    dateTime = exifData.DateTimeOriginal;  // Primäre Quelle für Original-Aufnahmedatum
+                    if (!dateTime) {
+                        // Versuche alternative EXIF-Felder für das Original-Datum
+                        dateTime = exifData.CreateDate || null;
+                    }
                     
                     if (typeof dateTime === 'string') {
+                        // Konvertiere EXIF-Datumsformat (YYYY:MM:DD HH:mm:ss) in JavaScript Date
                         dateTime = new Date(dateTime.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3'));
                     }
 
@@ -396,6 +390,7 @@
                     console.error('EXIF-Auslesen fehlgeschlagen:', error);
                 }
 
+                // HEIC Konvertierung wenn nötig
                 if (file.name.toLowerCase().endsWith('.heic')) {
                     const convertedBlob = await heic2any({
                         blob: file,
@@ -409,14 +404,18 @@
 
                 imageUrls.set(photoId, imageUrl);
 
-                const formattedDate = dateTime ? new Intl.DateTimeFormat('de-DE', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                }).format(dateTime) : 'Kein Datum';
+                // Formatiere das Datum
+                const formattedDate = dateTime 
+                    ? new Intl.DateTimeFormat('de-DE', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      }).format(dateTime)
+                    : 'Kein Aufnahmedatum';
 
+                // Erstelle HTML für Listeneintrag und Marker
                 if (gpsData) {
                     const { latitude, longitude } = gpsData;
                     
@@ -436,7 +435,7 @@
                         <div class="photo-info">
                             <div style="display: flex; justify-content: space-between;">
                                 <div class="filename">${file.name}</div>
-                                <div class="date-time">${formattedDate}</div>
+                                <div class="date-time ${!dateTime ? 'no-date' : ''}">${formattedDate}</div>
                             </div>
                             <div class="coordinates">${latitude.toFixed(6)}, ${longitude.toFixed(6)}</div>
                         </div>
@@ -455,7 +454,7 @@
                         <div class="photo-info">
                             <div style="display: flex; justify-content: space-between;">
                                 <div class="filename">${file.name}</div>
-                                <div class="date-time">${formattedDate}</div>
+                                <div class="date-time ${!dateTime ? 'no-date' : ''}">${formattedDate}</div>
                             </div>
                             <div class="coordinates no-coords">Keine Koordinaten</div>
                         </div>
@@ -473,6 +472,7 @@
             }
         }
 
+        // Verhindern des elastischen Scrollens auf iOS
         document.addEventListener('touchmove', function(e) {
             if (e.target.closest('.photo-list')) return;
             e.preventDefault();
